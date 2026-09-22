@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Text, DateTime, Integer, Boolean, UniqueConstraint, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.pool import NullPool
 
 class Base(DeclarativeBase): pass
 class Source(Base):
@@ -30,7 +31,10 @@ def engine(url: str):
     # psycopg prepared statements so a long registry import cannot collide with
     # a statement left behind by a previous pooled connection.
     connect_args = {"prepare_threshold": None} if url.startswith("postgresql+") else {}
-    return create_async_engine(url, future=True, connect_args=connect_args)
+    # The app creates short-lived engines for independent service operations.
+    # NullPool closes each connection when its session ends, preventing those
+    # engines from exhausting Supabase's small session-pool allocation.
+    return create_async_engine(url, future=True, connect_args=connect_args, poolclass=NullPool)
 async def migrate(url: str):
     e=engine(url)
     async with e.begin() as c:
