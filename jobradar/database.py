@@ -25,7 +25,12 @@ class Notification(Base):
     __tablename__="notifications"; __table_args__=(UniqueConstraint("job_id", name="uq_notification_job"),)
     id: Mapped[int]=mapped_column(primary_key=True); job_id: Mapped[int]=mapped_column(index=True); status: Mapped[str]=mapped_column(String(16), default="PENDING"); sent_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True), nullable=True)
 
-def engine(url: str): return create_async_engine(url, future=True)
+def engine(url: str):
+    # Supabase's pooler can reuse server connections across clients.  Disable
+    # psycopg prepared statements so a long registry import cannot collide with
+    # a statement left behind by a previous pooled connection.
+    connect_args = {"prepare_threshold": None} if url.startswith("postgresql+") else {}
+    return create_async_engine(url, future=True, connect_args=connect_args)
 async def migrate(url: str):
     e=engine(url)
     async with e.begin() as c:

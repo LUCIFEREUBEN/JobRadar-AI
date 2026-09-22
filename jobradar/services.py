@@ -26,12 +26,14 @@ async def import_sources(url:str, directory:Path|None=None)->int:
         for (provider,token),row in seeds.items():
             if (provider,token) in existing: continue
             rows.append({"provider":provider,"company_name":(row.get("company") or token)[:255],"board_token":token,"base_url":row.get("api_jobs_url") or row.get("hosted_board_url") or "","careers_url":row.get("hosted_board_url"),"source_origin":row.get("source_dataset") or row["_file"]})
-        for offset in range(0,len(rows),100):
+        # Small commits are deliberate: hosted Postgres poolers impose a short
+        # statement window and this registry contains thousands of entries.
+        for offset in range(0,len(rows),25):
             if db.bind and db.bind.dialect.name == "postgresql":
                 statement=postgres_insert(Source).on_conflict_do_nothing(index_elements=["provider","board_token"])
             else:
                 statement=insert(Source)
-            await db.execute(statement,rows[offset:offset+100])
+            await db.execute(statement,rows[offset:offset+25])
             # A large seed can outlive a serverless execution window; retain each idempotent chunk.
             await db.commit()
         count=len(rows)
