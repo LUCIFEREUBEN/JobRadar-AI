@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import asyncio, csv, json
 from pathlib import Path
 import httpx
-from sqlalchemy import select, func
+from sqlalchemy import select, func, insert
 from .config import ROOT, yaml_config
 from .database import Source, Job, Resume, Notification, sessions
 from .models import AIAnalysis, NormalizedJob, ResumeProfile, LiveStatus
@@ -13,16 +13,23 @@ from .sources import SourceRef, ADAPTERS, discover_source
 
 async def import_sources(url:str, directory:Path|None=None)->int:
     directory=directory or ROOT/"registry-package"/"ats_source_registry_package"; Session=sessions(url); count=0
+    seeds: dict[tuple[str,str],dict[str,str]]={}
+    for file in directory.glob("*_source_registry*.csv"):
+        with file.open(encoding="utf-8-sig",newline="") as f:
+            for row in csv.DictReader(f):
+                provider=(row.get("ats") or "").lower().strip(); token=(row.get("board_token") or "").strip()
+                if provider and token: seeds.setdefault((provider,token), {**row,"_file":file.name})
     async with Session() as db:
-        for file in directory.glob("*_source_registry*.csv"):
-            with file.open(encoding="utf-8-sig",newline="") as f:
-                for row in csv.DictReader(f):
-                    provider=(row.get("ats") or "").lower().strip(); token=(row.get("board_token") or "").strip()
-                    if not provider or not token: continue
-                    exists=await db.scalar(select(Source.id).where(Source.provider==provider,Source.board_token==token))
-                    if not exists:
-                        db.add(Source(provider=provider,company_name=(row.get("company") or token)[:255],board_token=token,base_url=row.get("api_jobs_url") or row.get("hosted_board_url") or "",careers_url=row.get("hosted_board_url"),source_origin=row.get("source_dataset") or file.name)); count+=1
-        await db.commit()
+        existing=set((await db.execute(select(Source.provider,Source.board_token))).all())
+        rows=[]
+        for (provider,token),row in seeds.items():
+            if (provider,token) in existing: continue
+            rows.append({"provider":provider,"company_name":(row.get("company") or token)[:255],"board_token":token,"base_url":row.get("api_jobs_url") or row.get("hosted_board_url") or "","careers_url":row.get("hosted_board_url"),"source_origin":row.get("source_dataset") or row["_file"]})
+        for offset in range(0,len(rows),100):
+            await db.execute(insert(Source),rows[offset:offset+100])
+            # A large seed can outlive a serverless execution window; retain each idempotent chunk.
+            await db.commit()
+        count=len(rows)
     return count
 
 async def import_resumes(url:str)->int:

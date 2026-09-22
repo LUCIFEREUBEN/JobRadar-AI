@@ -31,8 +31,8 @@ async def migrate(url: str):
     async with e.begin() as c:
         await c.run_sync(Base.metadata.create_all)
         # Additive migration keeps existing local databases usable; production migrations are repeatable.
-        for statement in ["ALTER TABLE jobs ADD COLUMN source_id INTEGER", "ALTER TABLE jobs ADD COLUMN last_seen_at DATETIME", "ALTER TABLE jobs ADD COLUMN last_changed_at DATETIME"]:
-            try: await c.execute(text(statement))
-            except Exception: pass
+        if c.dialect.name == "postgresql":
+            for statement in ["ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_id INTEGER", "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP", "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMP"]:
+                await c.execute(text(statement))
     await e.dispose()
 def sessions(url: str): return async_sessionmaker(engine(url), expire_on_commit=False)

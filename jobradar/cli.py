@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import re
 from pathlib import Path
 import typer
 from sqlalchemy import select, func
@@ -8,10 +9,19 @@ from .database import migrate, Source, Resume, sessions
 from .services import import_sources, import_resumes, crawl, candidates, send_report, discover_web_sources
 app=typer.Typer(help="JobRadar AI")
 sources_app=typer.Typer(); resumes_app=typer.Typer(); app.add_typer(sources_app,name="sources"); app.add_typer(resumes_app,name="resumes")
-def async_run(coro): return asyncio.run(coro)
+def async_run(coro):
+    if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    return asyncio.run(coro)
 @app.command()
 def doctor():
-    s=settings(); async_run(migrate(s.database_url)); Session=sessions(s.database_url)
+    s=settings()
+    try: async_run(migrate(s.database_url))
+    except Exception as exc:
+        detail=re.sub(r"//[^@\s]+@", "//***@", str(exc)).splitlines()[0]
+        typer.echo(f"FAIL database/migrations: {type(exc).__name__}: {detail}")
+        raise typer.Exit(1)
+    Session=sessions(s.database_url)
     async def check():
         async with Session() as db:return await db.scalar(select(func.count(Source.id))),await db.scalar(select(func.count(Resume.id)))
     source_count,resume_count=async_run(check())
