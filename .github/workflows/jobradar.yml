@@ -15,6 +15,7 @@ jobs:
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       NOTIFICATIONS_ENABLED: 'true'
+      SOURCE_IMPORT_LIMIT: '600'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -22,4 +23,4 @@ jobs:
       - run: uv run jobradar doctor
       - run: uv run jobradar sources import-all
       - run: uv run jobradar resumes import
-      - run: uv run jobradar run
+      - run: uv run jobradar run --sample-sources 100
