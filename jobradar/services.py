@@ -34,12 +34,15 @@ async def import_resumes(url:str)->int:
         await db.commit()
     return count
 
-async def upsert_job(url:str, job:NormalizedJob)->bool:
+async def upsert_job(url:str, job:NormalizedJob, source_id:int|None=None)->bool:
     Session=sessions(url)
     async with Session() as db:
         old=await db.scalar(select(Job).where(Job.canonical_job_key==job.canonical_job_key))
-        if old: old.content_hash=job.content_hash; return False
-        db.add(Job(canonical_job_key=job.canonical_job_key,provider=job.provider,external_job_id=job.external_job_id,company_name=job.company_name,title=job.title,canonical_url=job.canonical_url,apply_url=job.apply_url,description_text=job.description_text,content_hash=job.content_hash,locations=json.dumps(job.locations))); await db.commit(); return True
+        if old:
+            old.last_seen_at=datetime.now(timezone.utc)
+            if old.content_hash != job.content_hash: old.content_hash=job.content_hash; old.description_text=job.description_text; old.last_changed_at=datetime.now(timezone.utc)
+            await db.commit(); return False
+        db.add(Job(source_id=source_id,canonical_job_key=job.canonical_job_key,provider=job.provider,external_job_id=job.external_job_id,company_name=job.company_name,title=job.title,canonical_url=job.canonical_url,apply_url=job.apply_url,description_text=job.description_text,content_hash=job.content_hash,locations=json.dumps(job.locations))); await db.commit(); return True
 
 def deterministic_score(job:Job, resumes:list[ResumeProfile])->tuple[int,ResumeProfile|None]:
     words=set((job.title+" "+job.description_text).lower().split()); best=None; score=0
@@ -63,17 +66,31 @@ async def crawl(url:str, limit:int=0)->dict:
     async with Session() as db: sources=(await db.scalars(select(Source).where(Source.status.in_(["ACTIVE","WATCHLIST","EMPTY"])).limit(limit or 10_000))).all()
     sem=asyncio.Semaphore(12)
     async def one(s:Source):
-        stats["sources_checked"]+=1; adapter=ADAPTERS.get(s.provider)
-        if not adapter:return
+        adapter=ADAPTERS.get(s.provider)
+        if not adapter:return s, [], RuntimeError("unsupported provider")
         try:
             async with sem: raw=await adapter.fetch_jobs(SourceRef(str(s.id),s.provider,s.company_name,s.board_token,s.base_url))
+            return s,raw,None
+        except Exception as exc: return s,[],exc
+    outcomes=await asyncio.gather(*(one(s) for s in sources))
+    # SQLite allows one writer; persist health and jobs sequentially after concurrent I/O.
+    for source,raw,error in outcomes:
+        stats["sources_checked"]+=1
+        async with Session() as db:
+            current=await db.get(Source,source.id)
+            if error:
+                stats["failures"]+=1; current.consecutive_failures+=1
+                if current.consecutive_failures>=5: current.status="BROKEN"
+            else:
+                current.status="ACTIVE" if raw else "EMPTY"; current.verification_status="VALID"; current.open_job_count=len(raw); current.consecutive_failures=0
+            await db.commit()
+        if not error:
             stats["jobs_fetched"]+=len(raw)
-            for r in raw:
-                if await upsert_job(url,normalize(r)):stats["new_jobs"]+=1
-        except Exception: stats["failures"]+=1
-    await asyncio.gather(*(one(s) for s in sources)); return stats
+            for raw_job in raw:
+                if await upsert_job(url,normalize(raw_job),source.id): stats["new_jobs"]+=1
+    return stats
 
-async def candidates(url:str, min_score:int=65)->list[tuple[Job,AIAnalysis]]:
+async def candidates(url:str, min_score:int=65, final_live_check:bool=True)->list[tuple[Job,AIAnalysis]]:
     prefs=yaml_config("preferences.yaml"); Session=sessions(url)
     async with Session() as db:
         jobs=(await db.scalars(select(Job).where(Job.notified==False))).all(); records=(await db.scalars(select(Resume))).all(); resumes=[ResumeProfile.model_validate_json(r.payload) for r in records]
@@ -81,9 +98,40 @@ async def candidates(url:str, min_score:int=65)->list[tuple[Job,AIAnalysis]]:
         for j in jobs:
             state,_=eligibility(j.title,j.description_text,json.loads(j.locations),prefs)
             if state.value=="INELIGIBLE":continue
+            if final_live_check and j.source_id:
+                source=await db.get(Source,j.source_id); adapter=ADAPTERS.get(j.provider)
+                if not source or not adapter: continue
+                try:
+                    live=await adapter.verify_job(SourceRef(str(source.id),source.provider,source.company_name,source.board_token,source.base_url),j.external_job_id)
+                    j.live_status=live.value
+                    if live != LiveStatus.LIVE: continue
+                except Exception:
+                    j.live_status=LiveStatus.UNCERTAIN.value; continue
             score,best=deterministic_score(j,resumes)
             if score>=min_score: results.append((j,await ai_score(__import__("jobradar.config",fromlist=["settings"]).settings(),j,resumes,score,best)))
-        return sorted(results,key=lambda x:x[1].score,reverse=True)
+        await db.commit(); return sorted(results,key=lambda x:x[1].score,reverse=True)
+
+async def discover_web_sources(url:str, tavily_key:str|None, budget:int=6)->int:
+    """Spend a bounded Tavily budget on broad role and ATS discovery queries."""
+    if not tavily_key: return 0
+    queries=["AI Engineer OR LLM Engineer India remote jobs", "Python Backend Engineer India remote jobs", "Software Engineer I new grad India jobs", "Machine Learning Engineer OR Data Engineer India remote", "AI intern OR software engineering intern India", "site:jobs.ashbyhq.com OR site:jobs.lever.co OR site:job-boards.greenhouse.io hiring"][:budget]
+    found=[]
+    async with httpx.AsyncClient(timeout=25) as client:
+        for query in queries:
+            try:
+                response=await client.post("https://api.tavily.com/search",json={"api_key":tavily_key,"query":query,"max_results":8,"search_depth":"basic"}); response.raise_for_status()
+                found.extend(item.get("url","") for item in response.json().get("results",[]))
+            except httpx.HTTPError: continue
+    Session=sessions(url); added=0
+    async with Session() as db:
+        for found_url in found:
+            parsed=discover_source(found_url)
+            if not parsed: continue
+            provider,token=parsed
+            if not await db.scalar(select(Source.id).where(Source.provider==provider,Source.board_token==token)):
+                db.add(Source(provider=provider,company_name=token,board_token=token,base_url=found_url,careers_url=found_url,source_origin="tavily")); added+=1
+        await db.commit()
+    return added
 
 async def send_report(settings, jobs:list[tuple[Job,AIAnalysis]], dry_run:bool=True)->str:
     from jinja2 import Template
@@ -91,11 +139,16 @@ async def send_report(settings, jobs:list[tuple[Job,AIAnalysis]], dry_run:bool=T
     out=ROOT/"reports";out.mkdir(exist_ok=True); path=out/"jobradar-preview.html";path.write_text(report,encoding="utf-8")
     if dry_run or not settings.notifications_enabled:return str(path)
     if not (settings.resend_api_key and settings.email_from and settings.email_to):raise RuntimeError("Resend/email configuration incomplete")
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.post("https://api.resend.com/emails",headers={"Authorization":f"Bearer {settings.resend_api_key}"},json={"from":settings.email_from,"to":[settings.email_to],"subject":"JobRadar: new live matches","html":report});r.raise_for_status()
     Session=sessions(settings.database_url)
     async with Session() as db:
         for job,_ in jobs:
-            if not await db.scalar(select(Notification.id).where(Notification.job_id==job.id)): db.add(Notification(job_id=job.id,status="SENT",sent_at=datetime.now(timezone.utc))); job.notified=True
+            if not await db.scalar(select(Notification.id).where(Notification.job_id==job.id)): db.add(Notification(job_id=job.id,status="PENDING"))
+        await db.commit()
+    idempotency_key="jobradar-"+"-".join(str(job.id) for job,_ in jobs)
+    async with httpx.AsyncClient(timeout=20) as c:
+        r=await c.post("https://api.resend.com/emails",headers={"Authorization":f"Bearer {settings.resend_api_key}","Idempotency-Key":idempotency_key},json={"from":settings.email_from,"to":[settings.email_to],"subject":"JobRadar: new live matches","html":report});r.raise_for_status()
+    async with Session() as db:
+        for job,_ in jobs:
+            notification=await db.scalar(select(Notification).where(Notification.job_id==job.id)); notification.status="SENT"; notification.sent_at=datetime.now(timezone.utc); current=await db.get(Job,job.id); current.notified=True
         await db.commit()
     return str(path)

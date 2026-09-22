@@ -11,3 +11,4 @@ def test_senior_is_rejected(): assert eligibility("Staff AI Engineer","",[],PREF
 def test_us_only_remote_is_rejected(): assert eligibility("AI Engineer","Remote - US residents only",["Remote"],PREFS)[0].value=="INELIGIBLE"
 def test_worldwide_india_is_eligible(): assert eligibility("AI Engineer","Remote worldwide. India eligible",["Remote"],PREFS)[0].value=="ELIGIBLE"
 def test_discovery_detects_ats(): assert discover_source("https://jobs.ashbyhq.com/acme/123")==("ashby","acme")
+def test_generic_discovery_detects_greenhouse(): assert discover_source("https://job-boards.greenhouse.io/northstar/jobs/55")==("greenhouse","northstar")

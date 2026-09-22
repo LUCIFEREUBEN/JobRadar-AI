@@ -5,7 +5,7 @@ import typer
 from sqlalchemy import select, func
 from .config import settings
 from .database import migrate, Source, Resume, sessions
-from .services import import_sources, import_resumes, crawl, candidates, send_report
+from .services import import_sources, import_resumes, crawl, candidates, send_report, discover_web_sources
 app=typer.Typer(help="JobRadar AI")
 sources_app=typer.Typer(); resumes_app=typer.Typer(); app.add_typer(sources_app,name="sources"); app.add_typer(resumes_app,name="resumes")
 def async_run(coro): return asyncio.run(coro)
@@ -40,5 +40,5 @@ def report():
     s=settings(); jobs=async_run(candidates(s.database_url));typer.echo(async_run(send_report(s,jobs,True)))
 @app.command("run")
 def run_job(dry_run:bool=typer.Option(False,"--dry-run"), sample_sources:int=0):
-    s=settings();async_run(migrate(s.database_url)); crawl_stats=async_run(crawl(s.database_url,sample_sources)); jobs=async_run(candidates(s.database_url)); path=async_run(send_report(s,jobs,dry_run=dry_run));typer.echo({**crawl_stats,"report_candidates":len(jobs),"preview":path})
+    s=settings();async_run(migrate(s.database_url)); discovered=async_run(discover_web_sources(s.database_url,s.tavily_api_key,s.query_budget)); crawl_stats=async_run(crawl(s.database_url,sample_sources)); jobs=async_run(candidates(s.database_url)); path=async_run(send_report(s,jobs,dry_run=dry_run));typer.echo({**crawl_stats,"sources_discovered":discovered,"report_candidates":len(jobs),"preview":path})
 if __name__=="__main__":app()

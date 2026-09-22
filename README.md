@@ -17,7 +17,7 @@ The preview is written to `reports/jobradar-preview.html`. Development defaults 
 
 ## Architecture
 
-`registry -> provider adapters -> normalize/dedupe -> eligibility -> local deterministic score -> limited Cerebras evaluation -> final live check -> Resend report -> notification ledger`.
+`registry -> bounded Tavily discovery -> provider adapters -> normalize/dedupe -> eligibility -> deterministic score -> limited Cerebras evaluation -> final live check -> idempotent Resend report -> notification ledger`.
 
 The database is SQLite by default for local development and supports PostgreSQL with `DATABASE_URL=postgresql+psycopg://...`. Tables are created repeatably by `jobradar doctor`; production deployments should execute the same migration step before a run.
 
@@ -27,6 +27,6 @@ Live public adapters: Greenhouse, Ashby, Lever. The registry and common adapter 
 
 ## Configuration and safety
 
-Candidate data and role preferences live in `config/`. Secrets live only in `.env`, which is ignored by Git. The engine records jobs and notification rows with uniqueness constraints, so retries do not re-email a job. It never treats an ambiguous remote location as India-eligible.
+Candidate data and role preferences live in `config/`. Secrets live only in `.env`, which is ignored by Git. The engine records jobs and notification rows with uniqueness constraints, source-health state, and a stable delivery idempotency key. It never treats an ambiguous remote location as India-eligible.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), and [SETUP_REQUIRED.md](SETUP_REQUIRED.md).
