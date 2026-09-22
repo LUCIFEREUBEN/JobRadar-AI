@@ -1,0 +1,14 @@
+ats,known_entry_count,dataset_url,source_dataset,notes
+greenhouse,8333,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/greenhouse_companies.json,Feashliaa/job-board-aggregator,Flat JSON array of Greenhouse board slugs; Common-Crawl-derived public ATS directory.
+ashby,3161,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/ashby_companies.json,Feashliaa/job-board-aggregator,Flat JSON array of Ashby board slugs.
+lever,4368,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/lever_companies.json,Feashliaa/job-board-aggregator,Flat JSON array of Lever account slugs.
+workday,12884,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/workday_companies.json,Feashliaa/job-board-aggregator,Compound tokens tenant|wd-instance|site.
+bamboohr,11316,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/bamboohr_companies.json,Feashliaa/job-board-aggregator,Flat JSON array of BambooHR subdomains.
+icims,10108,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/icims_companies.json,Feashliaa/job-board-aggregator,Flat JSON array of iCIMS careers subdomain fragments.
+paylocity,,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/paylocity_companies_clean.json,Feashliaa/job-board-aggregator,"JSON objects containing Paylocity tenant GUID, company name and job metadata."
+workable,2756,https://raw.githubusercontent.com/Infrasity-Labs/developer-marketing-jobs/main/discovered_workable_companies.json,Infrasity-Labs/developer-marketing-jobs,Object with companies[] of Workable account slugs.
+smartrecruiters,308,https://raw.githubusercontent.com/Tindi12/Scout/main/packages/api/data/smartrecruiters_companies.json,Tindi12/Scout,Flat JSON array of SmartRecruiters company identifiers.
+recruitee,28,https://raw.githubusercontent.com/Tindi12/Scout/main/packages/api/data/recruitee_companies.json,Tindi12/Scout,Flat JSON array of Recruitee subdomains.
+teamtailor,21,https://raw.githubusercontent.com/Tindi12/Scout/main/packages/api/data/teamtailor_companies.json,Tindi12/Scout,Flat JSON array of Teamtailor subdomains.
+multi,12144,https://raw.githubusercontent.com/outscal/OpenJobs/main/data/companies_v2.json,outscal/OpenJobs,"Company corpus with ats_links; use regex extraction to discover Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, Recruitee, Personio, Breezy, BambooHR, Jobvite and Join.com tenants."
+multi,21,https://raw.githubusercontent.com/Thelastpoet/africa-ats-directory/main/companies/index.json,Thelastpoet/africa-ats-directory,Curated Africa ATS directory with verified/watchlist metadata across multiple providers.

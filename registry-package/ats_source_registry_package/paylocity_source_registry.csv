@@ -1,0 +1,2 @@
+entry_type,ats,company,board_token,token_type,hosted_board_url,api_jobs_url,api_jobs_content_url,api_method,source_status,source_checked_date,source_dataset,source_url,notes
+directory,paylocity,Feashliaa/job-board-aggregator,,directory_url,,,,,directory_to_expand,2026-09-22,Feashliaa/job-board-aggregator,https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/paylocity_companies_clean.json,"JSON objects containing Paylocity tenant GUID, company name and job metadata. Known snapshot count: not stated."

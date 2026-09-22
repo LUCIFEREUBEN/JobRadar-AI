@@ -1,0 +1,11 @@
+min_notification_score: 65
+allow_internships: true
+remote_only: false
+india_allowed: true
+bootstrap_notification_age_days: 7
+send_empty_reports: false
+search_enabled: true
+web_discovery_enabled: true
+excluded_title_terms: [senior, staff, principal, lead, director, manager]
+excluded_terms: [unpaid, commission-only, freelance marketplace, data annotation, rlhf rater]
+employment_types: [full-time, graduate, new-grad, internship, apprenticeship, fellowship, contract]

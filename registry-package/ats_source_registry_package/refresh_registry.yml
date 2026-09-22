@@ -1,0 +1,29 @@
+name: Refresh ATS source registry
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build full ATS registry
+        run: |
+          python build_full_registry.py \
+            --bootstrap ats_source_registry_bootstrap.csv \
+            --output ats_source_registry_full.csv \
+            --per-provider-dir provider_csvs \
+            --report full_registry_summary.json
+      - name: Commit changes
+        run: |
+          git config user.name 'jobradar-registry-bot'
+          git config user.email 'jobradar-registry-bot@users.noreply.github.com'
+          git add ats_source_registry_full.csv provider_csvs full_registry_summary.json
+          git diff --cached --quiet || git commit -m 'chore: refresh ATS source registry'
+          git push
