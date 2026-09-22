@@ -4,6 +4,7 @@ import asyncio, csv, json
 from pathlib import Path
 import httpx
 from sqlalchemy import select, func, insert
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from .config import ROOT, yaml_config
 from .database import Source, Job, Resume, Notification, sessions
 from .models import AIAnalysis, NormalizedJob, ResumeProfile, LiveStatus
@@ -26,7 +27,11 @@ async def import_sources(url:str, directory:Path|None=None)->int:
             if (provider,token) in existing: continue
             rows.append({"provider":provider,"company_name":(row.get("company") or token)[:255],"board_token":token,"base_url":row.get("api_jobs_url") or row.get("hosted_board_url") or "","careers_url":row.get("hosted_board_url"),"source_origin":row.get("source_dataset") or row["_file"]})
         for offset in range(0,len(rows),100):
-            await db.execute(insert(Source),rows[offset:offset+100])
+            if db.bind and db.bind.dialect.name == "postgresql":
+                statement=postgres_insert(Source).on_conflict_do_nothing(index_elements=["provider","board_token"])
+            else:
+                statement=insert(Source)
+            await db.execute(statement,rows[offset:offset+100])
             # A large seed can outlive a serverless execution window; retain each idempotent chunk.
             await db.commit()
         count=len(rows)
